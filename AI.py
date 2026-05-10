@@ -26,7 +26,7 @@ for _c in range(1, 6):
             _EVAL_TABLE[(_c, _e)] = 0
 AXES = [(1, 0), (0, 1), (1, 1), (1, -1)]
 class AiTicTacToe():
-    def __init__(self, depth = 4):
+    def __init__(self, depth = 3):
         self.depth = depth
         self.board = [[0 for j in range(N)] for i in range(N)]
         self.next_bound = set()
