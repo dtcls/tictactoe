@@ -1,5 +1,5 @@
 import pygame, sys
-import threading # Thêm thư viện đa luồng
+import threading 
 from AI import AiTicTacToe
 
 pygame.init()
@@ -21,7 +21,6 @@ graphical_board = [[ [None, None] for _ in range(N)] for _ in range(N)]
 to_move = -1
 FONT = pygame.font.SysFont("arial", 40)
 
-# --- BIẾN ĐIỀU KHIỂN LUỒNG ---
 ai_thinking = False 
 
 def display_winner(text):
@@ -57,15 +56,15 @@ def add_XO(board, graphical_board, to_move):
             return board, (1 if to_move == -1 else -1), converted_y, converted_x, last_move
     return board, to_move, None, None, None
 
-# --- HÀM XỬ LÝ AI TRONG LUỒNG RIÊNG ---
+
 def ai_task():
     global ai_thinking, to_move, game_finished, winner_text
     
-    # 1. AI tính toán nước đi
+
     move_y, move_x = ai.best_move() 
     
     if move_y != -1 and not game_finished:
-        # 2. Cập nhật dữ liệu
+
         board[move_y][move_x] = 1
         ai.board[move_y][move_x] = 1
         ai.currentI, ai.currentJ = move_y, move_x
@@ -73,10 +72,8 @@ def ai_task():
         ai.emptyCells -= 1
         ai.update_bound(move_y, move_x, ai.next_bound)
         
-        # 3. Cập nhật đồ họa
         render_board(board, X_IMG, O_IMG)
         
-        # 4. Kiểm tra kết quả
         if ai.isFour(move_y, move_x, 1):
             winner_text = "AI (O) WINS!"
             game_finished = True
@@ -84,7 +81,6 @@ def ai_task():
             winner_text = "TIE GAME!"
             game_finished = True
             
-    # 5. Kết thúc lượt và mở khóa luồng
     to_move = -1
     ai_thinking = False
 
@@ -105,15 +101,13 @@ while True:
     if game_finished:
         display_winner(winner_text)
     
-    # --- LOGIC AI ĐA LUỒNG ---
     if not game_finished and to_move == 1:
         if not ai_thinking:
             ai_thinking = True
-            # Chạy hàm ai_task trong một thread mới
+
             ai_thread = threading.Thread(target=ai_task)
             ai_thread.start()
         
-        # Vẽ hiệu ứng "AI is thinking..." để người chơi biết
         thinking_text = FONT.render("AI is thinking...", True, (255, 255, 255))
         SCREEN.blit(thinking_text, (20, 20))
 
@@ -123,7 +117,6 @@ while True:
             sys.exit()
             
         if event.type == pygame.MOUSEBUTTONDOWN:
-            # Chỉ nhận click nếu game chưa xong và AI không đang nghĩ
             if game_finished:
                 board = [[0 for _ in range(N)] for _ in range(N)] 
                 graphical_board = [[ [None, None] for _ in range(N)] for _ in range(N)]

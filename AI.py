@@ -26,7 +26,7 @@ for _c in range(1, 6):
             _EVAL_TABLE[(_c, _e)] = 0
 AXES = [(1, 0), (0, 1), (1, 1), (1, -1)]
 class AiTicTacToe():
-    def __init__(self, depth = 5):
+    def __init__(self, depth = 2):
         self.depth = depth
         self.board = [[0 for j in range(N)] for i in range(N)]
         self.next_bound = set()
@@ -196,7 +196,7 @@ class AiTicTacToe():
                     key = (i, j)
                     self.history_table[key] = self.history_table.get(key, 0) + depth ** 2
                 if beta <= alpha:
-                    # Killer heuristic: lưu nước gây cutoff
+
                     key = (i, j)
                     if key not in self.killer_moves[depth]:
                         self.killer_moves[depth].insert(0, key)
