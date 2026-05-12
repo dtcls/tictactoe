@@ -2,6 +2,11 @@ import pygame, sys
 import threading 
 from AI import AiTicTacToe
 
+# --- IMPORT THÊM THƯ VIỆN CHO VIDEO VÀ GIF ---
+import cv2
+import numpy as np
+from PIL import Image, ImageSequence
+
 pygame.init()
 pygame.mixer.init() # Khởi tạo module âm thanh của Pygame
 
@@ -39,31 +44,19 @@ except Exception as e:
 
 # --- TẢI ÂM THANH VÀ NHẠC NỀN ---
 try:
-    # --- 1. Tải Hiệu ứng âm thanh (Sound Effects) ---
     SOUND_MOVE = pygame.mixer.Sound("assets/move2.wav")   
     SOUND_CLICK = pygame.mixer.Sound("assets/click.wav") 
     SOUND_UNDO = pygame.mixer.Sound("assets/undo.wav")   
 
-    # --- 2. Tải và phát Nhạc nền (Background Music) ---
-    # Thay "bgm.mp3" bằng tên file nhạc của bạn
     pygame.mixer.music.load("assets/bgm.wav") 
-    
-    # Chỉnh âm lượng nhạc nền (0.0 đến 1.0). Để 0.3 cho nhạc phát nhè nhẹ làm nền
     pygame.mixer.music.set_volume(0.2) 
-    
-    # Phát nhạc. Số -1 có nghĩa là nhạc sẽ lặp lại vô tận (Loop)
     pygame.mixer.music.play(-1) 
-
 except Exception as e:
-    print(f"Lỗi tải âm thanh (hãy kiểm tra lại tên file trong thư mục assets): {e}")
-    SOUND_MOVE = None
-    SOUND_CLICK = None
-    SOUND_UNDO = None
+    print(f"Lỗi tải âm thanh: {e}")
+    SOUND_MOVE = None; SOUND_CLICK = None; SOUND_UNDO = None
 
 def play_sound(sound):
-    """Hàm hỗ trợ phát âm thanh để tránh lỗi nếu file không tồn tại"""
-    if sound:
-        sound.play()
+    if sound: sound.play()
 
 board = [[0 for _ in range(N)] for _ in range(N)]
 graphical_board = [[ [None, None] for _ in range(N)] for _ in range(N)]
@@ -71,18 +64,15 @@ to_move = -1
 
 # --- KHỞI TẠO CÁC FONT CHỮ ---
 classic_font = "Courier New" 
-
-# Sử dụng SysFont để lấy phông có sẵn trong hệ điều hành
 FONT = pygame.font.SysFont(classic_font, 42, bold=True)
 FONT_SMALL = pygame.font.SysFont(classic_font, 20, bold=True)
 FONT_MED = pygame.font.SysFont(classic_font, 24, bold=True) 
 FONT_LARGE = pygame.font.SysFont(classic_font, 36, bold=True)
 
-# --- BIẾN TOÀN CỤC CHO UI & GAME LỌGIC ---
 ai_thinking = False 
 game_finished = False
 current_difficulty = "Medium" 
-move_history = [] # Lịch sử lưu các nước đi (y, x, người chơi) để dùng cho Undo
+move_history = [] 
 
 btn_easy_rect = None
 btn_med_rect = None
@@ -97,6 +87,123 @@ def display_winner(text):
     overlay.fill((0, 0, 0))
     SCREEN.blit(overlay, (0, HEIGHT // 2 - 75))
     SCREEN.blit(render_text, text_rect)
+
+# =========================================================================
+# HÀM PHÁT VIDEO INTRO (DÙNG OPENCV)
+# =========================================================================
+def play_intro_video():
+    video_path = "assets/trailer.mp4"
+    cap = cv2.VideoCapture(video_path)
+    
+    if not cap.isOpened():
+        print("Không tìm thấy video intro, bỏ qua...")
+        return
+
+    clock = pygame.time.Clock()
+    intro_font = pygame.font.SysFont(classic_font, 40, bold=True)
+    text_surface = intro_font.render("Click anywhere to continue", True, (255, 255, 255))
+    text_rect = text_surface.get_rect(center=(WIDTH // 2, HEIGHT // 2))
+
+    running_intro = True
+    while running_intro:
+        ret, frame = cap.read()
+        
+        # Nếu video chạy hết, tua lại từ đầu để lặp (Loop)
+        if not ret:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            continue
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit(); sys.exit()
+            # Ấn chuột bất kỳ đâu để thoát Intro
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                running_intro = False
+                play_sound(SOUND_CLICK)
+
+        # Chuyển đổi khung hình OpenCV (BGR) sang Pygame (RGB)
+        frame = cv2.resize(frame, (WIDTH, HEIGHT))
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        # Tạo surface từ mảng pixel
+        frame_surface = pygame.image.frombuffer(frame.tobytes(), (WIDTH, HEIGHT), "RGB")
+
+        # Vẽ Video lên màn hình
+        SCREEN.blit(frame_surface, (0, 0))
+        
+        # Tạo hiệu ứng chữ nhấp nháy (Blinking text)
+        if (pygame.time.get_ticks() // 600) % 2 == 0:
+            # Thêm viền đen cho chữ để dễ đọc trên nền video sáng
+            bg_text = intro_font.render("Click anywhere to continue", True, (0, 0, 0))
+            SCREEN.blit(bg_text, (text_rect.x + 2, text_rect.y + 2))
+            SCREEN.blit(text_surface, text_rect)
+
+        pygame.display.flip()
+        clock.tick(30) # Cố định 30 FPS cho video
+        
+    cap.release()
+
+# =========================================================================
+# HÀM PHÁT HOẠT ẢNH LOADING GIF (DÙNG PILLOW)
+# =========================================================================
+def play_loading_animation():
+    gif_path = "assets/loading.gif"
+    frames = []
+    
+    try:
+        pil_gif = Image.open(gif_path)
+        for frame in ImageSequence.Iterator(pil_gif):
+            frame_rgba = frame.convert("RGBA")
+            size = frame_rgba.size
+            
+            # --- XỬ LÝ TÁCH NỀN TRẮNG CHO TỪNG FRAME BẰNG NUMPY ---
+            data = np.array(frame_rgba)
+            red, green, blue, alpha = data.T
+            
+            # Quét các điểm ảnh màu trắng (Mã RGB > 240)
+            white_areas = (red > 240) & (green > 240) & (blue > 240)
+            
+            # Chuyển kênh Alpha của các điểm màu trắng thành 0 (Trong suốt)
+            data[..., 3][white_areas.T] = 0
+            
+            # Tạo lại ảnh Pygame từ mảng dữ liệu đã tách nền
+            py_image = pygame.image.frombuffer(data.tobytes(), size, "RGBA")
+            
+            # Tăng kích thước cái đồng hồ lên một chút
+            py_image = pygame.transform.scale(py_image, (250, int(250 * size[1]/size[0]))) 
+            frames.append(py_image)
+            
+    except Exception as e:
+        print(f"Không thể load hoặc xử lý GIF: {e}, bỏ qua loading...")
+        return
+
+    clock = pygame.time.Clock()
+    loading_duration = 3000 # 3 giây
+    start_time = pygame.time.get_ticks()
+    frame_idx = 0
+    
+    loading_font = pygame.font.SysFont(classic_font, 35, bold=True)
+
+    while pygame.time.get_ticks() - start_time < loading_duration:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit(); sys.exit()
+
+        # Nền tối cho màn hình loading (đồng hồ đã trong suốt nên sẽ nổi bật trên nền này)
+        SCREEN.fill((15, 12, 10)) 
+        
+        current_frame = frames[frame_idx]
+        gif_rect = current_frame.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 30))
+        SCREEN.blit(current_frame, gif_rect)
+        
+        dots = "." * ((pygame.time.get_ticks() // 400) % 4)
+        text_surface = loading_font.render(f"Loading Game{dots}", True, (220, 205, 175))
+        text_rect = text_surface.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 210))
+        SCREEN.blit(text_surface, text_rect)
+
+        pygame.display.flip()
+        
+        frame_idx = (frame_idx + 1) % len(frames)
+        clock.tick(15)
 
 # 2. HÀM VẼ NỀN ẢNH VÀ UI BẢNG CỜ ĐƯỢC CHIA Ô
 def draw_background_and_ui(surface):
@@ -213,9 +320,7 @@ def draw_background_and_ui(surface):
     box5_h = 50
     btn_undo_rect = pygame.Rect(ui_x + padding, box5_y, box_w, box5_h)
     
-    # Kiểm tra điều kiện có được bấm Undo không
     can_undo = not ai_thinking and len(move_history) >= 2
-    
     undo_bg = box_bg_color if can_undo else (220, 210, 190)
     undo_txt_color = ink_color if can_undo else (150, 140, 130)
 
@@ -283,12 +388,8 @@ def ai_task():
         ai.emptyCells -= 1
         ai.update_bound(move_y, move_x, ai.next_bound)
         
-        # Lưu nước đi của máy vào lịch sử
         move_history.append((move_y, move_x, 1))
-        
-        # Phát âm thanh khi AI đánh
         play_sound(SOUND_MOVE)
-        
         render_board(board, X_IMG, O_IMG)
         
         if ai.isFour(move_y, move_x, 1):
@@ -300,6 +401,13 @@ def ai_task():
             
     to_move = -1
     ai_thinking = False
+
+# =========================================================================
+# GỌI HÀM INTRO VÀ LOADING TRƯỚC KHI VÀO GAME
+# =========================================================================
+# (Nhạc nền đã bắt đầu phát từ trên cùng file nên nó sẽ kêu suốt lúc intro)
+play_intro_video()
+play_loading_animation()
 
 # --- MAIN LOOP ---
 ai = AiTicTacToe()
@@ -334,7 +442,6 @@ while True:
             # --- XỬ LÝ CLICK NÚT UNDO ---
             if btn_undo_rect and btn_undo_rect.collidepoint(mouse_pos):
                 if not ai_thinking and len(move_history) >= 2:
-                    # Phát âm thanh Undo
                     play_sound(SOUND_UNDO)
                     
                     while len(move_history) > 0 and move_history[-1][2] == 1:
@@ -388,7 +495,6 @@ while True:
             elif to_move == -1 and not ai_thinking: 
                 board, to_move, y, x, last_move = add_XO(board, graphical_board, to_move)
                 if y is not None and x is not None:
-                    # Phát âm thanh khi người chơi đánh
                     play_sound(SOUND_MOVE)
                     
                     ai.board[y][x] = -1
