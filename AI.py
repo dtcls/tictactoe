@@ -53,7 +53,8 @@ class AiTicTacToe():
         self.trans_table: dict[int, tuple] = {}
         self._TT_MAX = 500_000
         # Zobrist
-        self._zhash: int = 0                 
+        self._zhash: int = 0
+        self.score: int = 0                 
     #__Helper__
 
     # check wheter a move is inside board
@@ -64,18 +65,32 @@ class AiTicTacToe():
             return False
         else:
             return True
-    
+    # use or zHashing
     def _place(self, i: int, j: int, state: int):
-            self.board[i][j] = state
-            self._zhash ^= _ZOBRIST[i][j][0 if state == 1 else 1]
-            self.emptyCells -= 1
-    
-    
+        old_delta = self.cell_score_delta(i, j)
+        self.board[i][j] = state
+        self._zhash ^= _ZOBRIST[i][j][0 if state == 1 else 1]
+        self.emptyCells -= 1
+        new_delta = self.cell_score_delta(i, j)
+        self.score += new_delta - old_delta
+ 
     def _unplace(self, i: int, j: int, state: int):
+        old_delta = self.cell_score_delta(i, j)
         self.board[i][j] = 0
         self._zhash ^= _ZOBRIST[i][j][0 if state == 1 else 1]
         self.emptyCells += 1
-    
+        new_delta = self.cell_score_delta(i, j)
+        self.score += new_delta - old_delta
+    # eval score in (i, j)
+    def cell_score_delta(self, i, j):
+        cell = self.board[i][j]
+        if cell == 0:
+            return 0
+        s = 0
+        for dirX, dirY in AXES:
+            cnt, open_ends = self.line_correct(i, j, dirX, dirY, cell)
+            s += cell * _EVAL_TABLE.get((cnt,open_ends), 0)
+        return s
     # Update bound
     def update_bound(self, ni, nj, bound: set, radius = 3):
         bound.discard((ni, nj))
@@ -123,25 +138,27 @@ class AiTicTacToe():
         return s
     
     # Evaluate
+    # def evaluate(self):
+    #     score = 0
+    #     board = self.board
+    #     for i in range(N):
+    #         row = board[i]
+    #         for j in range(N):
+    #             cell = row[j]
+    #             if cell == 0:
+    #                 continue
+    #             for dirX, dirY in AXES:
+    #                 prev_r = i - dirY
+    #                 prev_c = j - dirX
+    #                 if 0 <= prev_r < N and 0 <= prev_c < N and board[prev_r][prev_c] == cell:
+    #                     continue  
+    #                 cnt, ends = self.line_correct(i, j, dirX, dirY, cell)
+    #                 if cnt >= 2:
+    #                     score += cell * _EVAL_TABLE.get((cnt, ends), 0)
+    #     return score
     def evaluate(self):
-        score = 0
-        board = self.board
-        for i in range(N):
-            row = board[i]
-            for j in range(N):
-                cell = row[j]
-                if cell == 0:
-                    continue
-                for dirX, dirY in AXES:
-                    prev_r = i - dirY
-                    prev_c = j - dirX
-                    if 0 <= prev_r < N and 0 <= prev_c < N and board[prev_r][prev_c] == cell:
-                        continue  
-                    cnt, ends = self.line_correct(i, j, dirX, dirY, cell)
-                    if cnt >= 2:
-                        score += cell * _EVAL_TABLE.get((cnt, ends), 0)
-        return score
-    
+        return self.score
+        
     # Check win
     def isWin(self, i, j, state):
         # 4 directions: horizontal, vertical, 2 diagonals
@@ -182,10 +199,28 @@ class AiTicTacToe():
 
         for state in (1, -1):
             self.board[i][j] = state
-            s = self.eval_delta(i, j, state)
-            score += s if state == 1 else (s * 1.5)
-            self.board[i][j] = 0
+            try:
+                s = self.eval_delta(i, j, state)
+                score += s if state == 1 else (s * 1.5)
+            finally:
+                self.board[i][j] = 0
         return score
+    # threat detection
+    def threat(self, bound: set):
+        for i, j in bound:
+            self.board[i][j] = 1
+            win = self.isWin(i, j, 1)
+            self.board[i][j] = 0
+            if win:
+                return (i, j)
+        for i, j in bound:
+            self.board[i][j] = -1
+            win = self.isWin(i, j, -1)
+            self.board[i][j] = 0
+            if win:
+                return (i, j)
+                
+        return None
     
     # Ordering
     def orderedMoves(self, bound, depth):
@@ -362,12 +397,19 @@ class AiTicTacToe():
                             self.killer_moves[depth].pop()
                     flag = 'LOWER'
                     break
- 
-        if len(self.trans_table) >= self._TT_MAX:
-            self.trans_table.clear()
-        self.trans_table[hash] = (depth, best, flag)
+                
+        hash2 = self._zhash
+        existing = self.trans_table.get(hash2)
+        if existing is None or existing[0] <= depth:
+            if len(self.trans_table) >= self._TT_MAX:
+                sorted_keys = sorted(self.trans_table, key=lambda k: self.trans_table[k][0])
+                for k in sorted_keys[:self._TT_MAX // 2]:
+                    del self.trans_table[k]
+            self.trans_table[hash2] = (depth, best, flag)
  
         return best
+    
+
     def best_move(self):
         if self.emptyCells == N * N:
             return (N // 2, N // 2)
@@ -407,12 +449,19 @@ class AiTicTacToe():
         self.trans_table.clear()
 
         bound = set(self.next_bound)
-        move = (-1, -1)
+
+        threat = self.threat(bound)
+        if threat is not None:
+            return threat
+        
+        move = (-1, -1)   
 
         for d in range(1, self.depth + 1):
             best_score = -math.inf
             best_move =(-1, -1)
             moves = self.orderedMoves(bound, d)
+            if move != (-1, -1):
+                moves = [move] + [m for m in moves if m != move]
             for i, j in moves:
                 saved = (self.currentI, self.currentJ, self.lastPlayed)
                 self._place(i , j, 1)
