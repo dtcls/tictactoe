@@ -8,20 +8,20 @@ import numpy as np
 from PIL import Image, ImageSequence
 
 pygame.init()
-pygame.mixer.init() # Khởi tạo module âm thanh của Pygame
+pygame.mixer.init()
 
-# 1. CẬP NHẬT KÍCH THƯỚC MÀN HÌNH VÀ BẢNG CỜ
+# 1. KÍCH THƯỚC MÀN HÌNH VÀ BẢNG CỜ
 WIDTH, HEIGHT = 1280, 720
 SCREEN = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Caro Board - Mang tinh yeu den cho moi nha")
 
 N = 9
-CELL_SIZE = 55 # Kích thước 1 ô vuông 
-BOARD_SIZE = CELL_SIZE * N # Kích thước bảng 9x9 (495x495)
-BOARD_X = 600 # Đẩy bảng sang phải một chút cho cân đối
-BOARD_Y = 100 # Đẩy bảng xuống dưới
+CELL_SIZE = 55
+BOARD_SIZE = CELL_SIZE * N
+BOARD_X = 600
+BOARD_Y = 100
 
-# --- TẢI ẢNH NỀN GIẤY CUỘN CỔ ĐIỂN ---
+# --- TẢI ẢNH NỀN ---
 try:
     BG_IMG = pygame.image.load("assets/vintage_theme.jpg.jpeg")
     BG_IMG = pygame.transform.scale(BG_IMG, (WIDTH, HEIGHT))
@@ -30,7 +30,6 @@ except Exception as e:
     BG_IMG = pygame.Surface((WIDTH, HEIGHT))
     BG_IMG.fill((220, 205, 175)) 
 
-# Thu nhỏ X, O cho vừa với ô 60x60
 XO_Size = (40, 40)
 try:
     X_IMG = pygame.image.load("assets/X.png")
@@ -47,7 +46,6 @@ try:
     SOUND_MOVE = pygame.mixer.Sound("assets/move2.wav")   
     SOUND_CLICK = pygame.mixer.Sound("assets/click.wav") 
     SOUND_UNDO = pygame.mixer.Sound("assets/undo.wav")   
-
     pygame.mixer.music.load("assets/bgm.wav") 
     pygame.mixer.music.set_volume(0.2) 
     pygame.mixer.music.play(-1) 
@@ -58,11 +56,67 @@ except Exception as e:
 def play_sound(sound):
     if sound: sound.play()
 
+
+# MOVE CLASSES - HumanMove và AiMove
+class HumanMove:
+    
+    def __init__(self, player_value):
+
+        self.player_value = player_value
+    
+    def get_move(self, board, mouse_pos):
+        """
+        Trả về (row, col) nếu click hợp lệ, ngược lại trả về (None, None).
+        """
+        if (BOARD_X <= mouse_pos[0] <= BOARD_X + BOARD_SIZE and
+                BOARD_Y <= mouse_pos[1] <= BOARD_Y + BOARD_SIZE):
+            col = int((mouse_pos[0] - BOARD_X) / CELL_SIZE)
+            row = int((mouse_pos[1] - BOARD_Y) / CELL_SIZE)
+            if 0 <= col < N and 0 <= row < N:
+                if board[row][col] == 0:
+                    return row, col
+        return None, None
+    
+    def apply_move(self, board, ai_obj, row, col, move_history):
+        """Áp dụng nước đi lên board và cập nhật trạng thái AI."""
+        board[row][col] = self.player_value
+        ai_obj.board[row][col] = self.player_value
+        ai_obj.currentI, ai_obj.currentJ = row, col
+        ai_obj.lastPlayed = self.player_value
+        ai_obj.emptyCells -= 1
+        ai_obj.update_bound(row, col, ai_obj.next_bound)
+        move_history.append((row, col, self.player_value))
+        return board
+
+
+class AiMove:
+    
+    def __init__(self, player_value=1):
+
+        self.player_value = player_value
+    
+    def get_move(self, ai_obj):
+
+        return ai_obj.best_move_transposition()
+    
+    def apply_move(self, board, ai_obj, row, col, move_history):
+        """Áp dụng nước đi AI lên board."""
+        board[row][col] = self.player_value
+        ai_obj.board[row][col] = self.player_value
+        ai_obj.currentI, ai_obj.currentJ = row, col
+        ai_obj.lastPlayed = self.player_value
+        ai_obj.emptyCells -= 1
+        ai_obj.update_bound(row, col, ai_obj.next_bound)
+        move_history.append((row, col, self.player_value))
+        return board
+
+
+
+# TRẠNG THÁI GAME
 board = [[0 for _ in range(N)] for _ in range(N)]
 graphical_board = [[ [None, None] for _ in range(N)] for _ in range(N)]
-to_move = -1
+to_move = -1  # -1 = lượt X, 1 = lượt O
 
-# --- KHỞI TẠO CÁC FONT CHỮ ---
 classic_font = "Courier New" 
 FONT = pygame.font.SysFont(classic_font, 42, bold=True)
 FONT_SMALL = pygame.font.SysFont(classic_font, 20, bold=True)
@@ -71,13 +125,31 @@ FONT_LARGE = pygame.font.SysFont(classic_font, 36, bold=True)
 
 ai_thinking = False 
 game_finished = False
-current_difficulty = "Medium" 
-move_history = [] 
+current_difficulty = "Medium"
+move_history = []
+
+
+# Các chế độ: "HvA" (Human vs AI), "HvH" (Human vs Human)
+
+game_mode = "HvA"  # Mặc định: Human (X) vs AI (O)
+
+# Khởi tạo move handlers cho từng bên theo chế độ
+def create_move_handlers(mode):
+    """Tạo move handler cho X và O dựa trên game_mode."""
+    if mode == "HvH":
+        return HumanMove(-1), HumanMove(1)   # X=Human, O=Human
+    else:  # HvA (mặc định)
+        return HumanMove(-1), AiMove(1)      # X=Human, O=AI
+
+move_x_handler, move_o_handler = create_move_handlers(game_mode)
 
 btn_easy_rect = None
 btn_med_rect = None
 btn_hard_rect = None
 btn_undo_rect = None
+btn_hvA_rect = None
+btn_hvH_rect = None
+
 
 def display_winner(text):
     render_text = FONT.render(text, True, (255, 215, 0)) 
@@ -88,13 +160,13 @@ def display_winner(text):
     SCREEN.blit(overlay, (0, HEIGHT // 2 - 75))
     SCREEN.blit(render_text, text_rect)
 
+
 # =========================================================================
-# HÀM PHÁT VIDEO INTRO (DÙNG OPENCV)
+# HÀM PHÁT VIDEO INTRO
 # =========================================================================
 def play_intro_video():
     video_path = "assets/trailer.mp4"
     cap = cv2.VideoCapture(video_path)
-    
     if not cap.isOpened():
         print("Không tìm thấy video intro, bỏ qua...")
         return
@@ -107,8 +179,6 @@ def play_intro_video():
     running_intro = True
     while running_intro:
         ret, frame = cap.read()
-        
-        # Nếu video chạy hết, tua lại từ đầu để lặp (Loop)
         if not ret:
             cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
             continue
@@ -116,71 +186,51 @@ def play_intro_video():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit(); sys.exit()
-            # Ấn chuột bất kỳ đâu để thoát Intro
             if event.type == pygame.MOUSEBUTTONDOWN:
                 running_intro = False
                 play_sound(SOUND_CLICK)
 
-        # Chuyển đổi khung hình OpenCV (BGR) sang Pygame (RGB)
         frame = cv2.resize(frame, (WIDTH, HEIGHT))
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        # Tạo surface từ mảng pixel
         frame_surface = pygame.image.frombuffer(frame.tobytes(), (WIDTH, HEIGHT), "RGB")
-
-        # Vẽ Video lên màn hình
         SCREEN.blit(frame_surface, (0, 0))
         
-        # Tạo hiệu ứng chữ nhấp nháy (Blinking text)
         if (pygame.time.get_ticks() // 600) % 2 == 0:
-            # Thêm viền đen cho chữ để dễ đọc trên nền video sáng
             bg_text = intro_font.render("Click anywhere to continue", True, (0, 0, 0))
             SCREEN.blit(bg_text, (text_rect.x + 2, text_rect.y + 2))
             SCREEN.blit(text_surface, text_rect)
 
         pygame.display.flip()
-        clock.tick(30) # Cố định 30 FPS cho video
-        
+        clock.tick(30)
     cap.release()
 
+
 # =========================================================================
-# HÀM PHÁT HOẠT ẢNH LOADING GIF (DÙNG PILLOW)
+# HÀM PHÁT LOADING GIF
 # =========================================================================
 def play_loading_animation():
     gif_path = "assets/loading.gif"
     frames = []
-    
     try:
         pil_gif = Image.open(gif_path)
         for frame in ImageSequence.Iterator(pil_gif):
             frame_rgba = frame.convert("RGBA")
             size = frame_rgba.size
-            
-            # --- XỬ LÝ TÁCH NỀN TRẮNG CHO TỪNG FRAME BẰNG NUMPY ---
             data = np.array(frame_rgba)
             red, green, blue, alpha = data.T
-            
-            # Quét các điểm ảnh màu trắng (Mã RGB > 240)
             white_areas = (red > 240) & (green > 240) & (blue > 240)
-            
-            # Chuyển kênh Alpha của các điểm màu trắng thành 0 (Trong suốt)
             data[..., 3][white_areas.T] = 0
-            
-            # Tạo lại ảnh Pygame từ mảng dữ liệu đã tách nền
             py_image = pygame.image.frombuffer(data.tobytes(), size, "RGBA")
-            
-            # Tăng kích thước cái đồng hồ lên một chút
             py_image = pygame.transform.scale(py_image, (250, int(250 * size[1]/size[0]))) 
             frames.append(py_image)
-            
     except Exception as e:
-        print(f"Không thể load hoặc xử lý GIF: {e}, bỏ qua loading...")
+        print(f"Không thể load GIF: {e}, bỏ qua loading...")
         return
 
     clock = pygame.time.Clock()
-    loading_duration = 3000 # 3 giây
+    loading_duration = 3000
     start_time = pygame.time.get_ticks()
     frame_idx = 0
-    
     loading_font = pygame.font.SysFont(classic_font, 35, bold=True)
 
     while pygame.time.get_ticks() - start_time < loading_duration:
@@ -188,9 +238,7 @@ def play_loading_animation():
             if event.type == pygame.QUIT:
                 pygame.quit(); sys.exit()
 
-        # Nền tối cho màn hình loading (đồng hồ đã trong suốt nên sẽ nổi bật trên nền này)
         SCREEN.fill((15, 12, 10)) 
-        
         current_frame = frames[frame_idx]
         gif_rect = current_frame.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 30))
         SCREEN.blit(current_frame, gif_rect)
@@ -201,136 +249,166 @@ def play_loading_animation():
         SCREEN.blit(text_surface, text_rect)
 
         pygame.display.flip()
-        
         frame_idx = (frame_idx + 1) % len(frames)
         clock.tick(15)
 
-# 2. HÀM VẼ NỀN ẢNH VÀ UI BẢNG CỜ ĐƯỢC CHIA Ô
+
+# =========================================================================
+# VẼ UI (có thêm phần chọn Game Mode)
+# =========================================================================
+def get_player_labels(mode):
+    """Trả về (label_x, sublabel_x, label_o, sublabel_o) theo game mode."""
+    if mode == "HvH":
+        return "Player 1", "Human (X)", "Player 2", "Human (O)"
+    else:  # HvA
+        return "Player 1", "Human (X)", "BOT", "AI (O)"
+
+
 def draw_background_and_ui(surface):
     global to_move, ai_thinking, game_finished
     global btn_easy_rect, btn_med_rect, btn_hard_rect, btn_undo_rect, current_difficulty
+    global btn_hvA_rect, btn_hvH_rect, game_mode
     
     surface.blit(BG_IMG, (0, 0))
     
     ink_color = (80, 55, 40)
     parchment_color = (230, 212, 175)
-    
     box_bg_color = (240, 220, 190)       
     highlight_bg_color = (255, 255, 235) 
     highlight_border = 4                 
     normal_border = 2                    
 
-    # Bảng UI Menu (Bên trái)
     ui_x = 180
     ui_y = BOARD_Y      
     ui_width = 350
-    ui_height = BOARD_SIZE 
+    ui_height = BOARD_SIZE
     
     pygame.draw.rect(surface, parchment_color, (ui_x, ui_y, ui_width, ui_height))
     pygame.draw.rect(surface, ink_color, (ui_x, ui_y, ui_width, ui_height), 3)
 
     padding = 15
     box_w = ui_width - 2 * padding
-    
-    # --- Ô 1: YOU / PLAYER / X ---
+
+    # --- Ô 1: GAME MODE ---
     box1_y = ui_y + padding
-    box1_h = 100
-    
-    is_player_turn = (not game_finished and to_move == -1)
-    current_box1_bg = highlight_bg_color if is_player_turn else box_bg_color
-    current_box1_border = highlight_border if is_player_turn else normal_border
-    
-    pygame.draw.rect(surface, current_box1_bg, (ui_x + padding, box1_y, box_w, box1_h))
-    pygame.draw.rect(surface, ink_color, (ui_x + padding, box1_y, box_w, box1_h), current_box1_border)
-    
-    surface.blit(FONT_SMALL.render("YOU", True, (120, 100, 80)), (ui_x + padding + 15, box1_y + 15))
-    surface.blit(FONT_LARGE.render("Player", True, (20, 100, 20)), (ui_x + padding + 15, box1_y + 45))
-    if X_IMG:
-        surface.blit(X_IMG, (ui_x + padding + box_w - 60, box1_y + 30))
+    box1_h = 80
+    pygame.draw.rect(surface, box_bg_color, (ui_x + padding, box1_y, box_w, box1_h))
+    pygame.draw.rect(surface, ink_color, (ui_x + padding, box1_y, box_w, box1_h), normal_border)
+    surface.blit(FONT_SMALL.render("GAME MODE", True, (120, 100, 80)), (ui_x + padding + 15, box1_y + 8))
 
-    # --- Ô 2: BOT / AI / O ---
+    mode_btn_w = (box_w - 30) // 2
+    mode_btn_h = 32
+    mode_btn_start_x = ui_x + padding + 10
+    mode_btn_y = box1_y + 36
+    modes = [("HvA", "H vs AI"), ("HvH", "H vs H")]
+    mode_rects = []
+
+    for i, (mode_key, mode_label) in enumerate(modes):
+        rect = pygame.Rect(mode_btn_start_x + i * (mode_btn_w + 10), mode_btn_y, mode_btn_w, mode_btn_h)
+        mode_rects.append(rect)
+        if game_mode == mode_key:
+            pygame.draw.rect(surface, ink_color, rect)
+            txt_col = (255, 255, 255)
+        else:
+            pygame.draw.rect(surface, ink_color, rect, 2)
+            txt_col = ink_color
+        lbl = FONT_SMALL.render(mode_label, True, txt_col)
+        surface.blit(lbl, (rect.x + (mode_btn_w - lbl.get_width()) // 2,
+                           rect.y + (mode_btn_h - lbl.get_height()) // 2))
+    btn_hvA_rect, btn_hvH_rect = mode_rects[0], mode_rects[1]
+
+    # --- Ô 2: PLAYER X ---
+    label_x, sub_x, label_o, sub_o = get_player_labels(game_mode)
     box2_y = box1_y + box1_h + padding
-    box2_h = 100
-    
-    is_ai_turn = (not game_finished and to_move == 1)
-    current_box2_bg = highlight_bg_color if is_ai_turn else box_bg_color
-    current_box2_border = highlight_border if is_ai_turn else normal_border
+    box2_h = 85
+    is_x_turn = (not game_finished and to_move == -1)
+    bg2 = highlight_bg_color if is_x_turn else box_bg_color
+    border2 = highlight_border if is_x_turn else normal_border
+    pygame.draw.rect(surface, bg2, (ui_x + padding, box2_y, box_w, box2_h))
+    pygame.draw.rect(surface, ink_color, (ui_x + padding, box2_y, box_w, box2_h), border2)
+    surface.blit(FONT_SMALL.render(label_x, True, (120, 100, 80)), (ui_x + padding + 15, box2_y + 10))
+    surface.blit(FONT_MED.render(sub_x, True, (20, 100, 20)), (ui_x + padding + 15, box2_y + 40))
+    if X_IMG:
+        surface.blit(X_IMG, (ui_x + padding + box_w - 60, box2_y + 22))
 
-    pygame.draw.rect(surface, current_box2_bg, (ui_x + padding, box2_y, box_w, box2_h))
-    pygame.draw.rect(surface, ink_color, (ui_x + padding, box2_y, box_w, box2_h), current_box2_border)
-    
-    surface.blit(FONT_SMALL.render("BOT", True, (120, 100, 80)), (ui_x + padding + 15, box2_y + 15))
-    surface.blit(FONT_LARGE.render("AI", True, (180, 40, 40)), (ui_x + padding + 15, box2_y + 45))
-    if O_IMG:
-        surface.blit(O_IMG, (ui_x + padding + box_w - 60, box2_y + 30))
-
-    # --- Ô 3: DIFFICULTY (NÚT BẤM) ---
+    # --- Ô 3: PLAYER O ---
     box3_y = box2_y + box2_h + padding
-    box3_h = 90
-    pygame.draw.rect(surface, box_bg_color, (ui_x + padding, box3_y, box_w, box3_h))
-    pygame.draw.rect(surface, ink_color, (ui_x + padding, box3_y, box_w, box3_h), normal_border)
-    
-    surface.blit(FONT_SMALL.render("DIFFICULTY", True, (120, 100, 80)), (ui_x + padding + 15, box3_y + 10))
+    box3_h = 85
+    is_o_turn = (not game_finished and to_move == 1)
+    bg3 = highlight_bg_color if is_o_turn else box_bg_color
+    border3 = highlight_border if is_o_turn else normal_border
+    pygame.draw.rect(surface, bg3, (ui_x + padding, box3_y, box_w, box3_h))
+    pygame.draw.rect(surface, ink_color, (ui_x + padding, box3_y, box_w, box3_h), border3)
+    surface.blit(FONT_SMALL.render(label_o, True, (120, 100, 80)), (ui_x + padding + 15, box3_y + 10))
+    surface.blit(FONT_MED.render(sub_o, True, (180, 40, 40)), (ui_x + padding + 15, box3_y + 40))
+    if O_IMG:
+        surface.blit(O_IMG, (ui_x + padding + box_w - 60, box3_y + 22))
+
+    # --- Ô 4: DIFFICULTY ---
+    box4_y = box3_y + box3_h + padding
+    box4_h = 80
+    pygame.draw.rect(surface, box_bg_color, (ui_x + padding, box4_y, box_w, box4_h))
+    pygame.draw.rect(surface, ink_color, (ui_x + padding, box4_y, box_w, box4_h), normal_border)
+    surface.blit(FONT_SMALL.render("DIFFICULTY", True, (120, 100, 80)), (ui_x + padding + 15, box4_y + 8))
     
     btn_w = (box_w - 40) // 3 
-    btn_h = 35
+    btn_h = 32
     btn_start_x = ui_x + padding + 10
-    btn_y = box3_y + 40
+    btn_y = box4_y + 38
 
     difficulties = ["Easy", "Medium", "Hard"]
     rects = []
-
     for i, diff in enumerate(difficulties):
         rect = pygame.Rect(btn_start_x + i * (btn_w + 10), btn_y, btn_w, btn_h)
         rects.append(rect)
-        
         if current_difficulty == diff:
             pygame.draw.rect(surface, ink_color, rect) 
             text_color = (255, 255, 255)
         else:
             pygame.draw.rect(surface, ink_color, rect, 2)
             text_color = ink_color
-
-        render_txt = FONT_MED.render(diff, True, text_color)
-        surface.blit(render_txt, (rect.x + (btn_w - render_txt.get_width()) // 2, rect.y + (btn_h - render_txt.get_height()) // 2))
-
+        render_txt = FONT_SMALL.render(diff, True, text_color)
+        surface.blit(render_txt, (rect.x + (btn_w - render_txt.get_width()) // 2,
+                                  rect.y + (btn_h - render_txt.get_height()) // 2))
     btn_easy_rect, btn_med_rect, btn_hard_rect = rects[0], rects[1], rects[2]
 
-    # --- Ô 4: TRẠNG THÁI LƯỢT ĐI ---
-    box4_y = box3_y + box3_h + padding
-    box4_h = 70
-    pygame.draw.rect(surface, box_bg_color, (ui_x + padding, box4_y, box_w, box4_h))
-    pygame.draw.rect(surface, ink_color, (ui_x + padding, box4_y, box_w, box4_h), normal_border)
-    
+    # --- Ô 5: TRẠNG THÁI ---
+    box5_y = box4_y + box4_h + padding
+    box5_h = 60
+    pygame.draw.rect(surface, box_bg_color, (ui_x + padding, box5_y, box_w, box5_h))
+    pygame.draw.rect(surface, ink_color, (ui_x + padding, box5_y, box_w, box5_h), normal_border)
+
     status_color = ink_color
     if game_finished:
-        status_text = "Game Over!"
+        status_text = "Game Over! Click board"
+    elif ai_thinking:
+        status_text = "AI is thinking..."
+        status_color = (180, 40, 40)
     elif to_move == -1:
-        status_text = "Your Turn (X)"
-        status_color = (20, 100, 20) 
+        status_text = "X's Turn"
+        status_color = (20, 100, 20)
     else:
-        status_text = "AI is thinking (O)..."
-        status_color = (180, 40, 40) 
-        
-    render_status = FONT_MED.render(status_text, True, status_color)
-    surface.blit(render_status, (ui_x + padding + (box_w - render_status.get_width()) // 2, box4_y + (box4_h - render_status.get_height()) // 2))
+        status_text = "O's Turn"
+        status_color = (180, 40, 40)
 
-    # --- Ô 5: NÚT ĐI LẠI (UNDO) ---
-    box5_y = box4_y + box4_h + padding
-    box5_h = 50
-    btn_undo_rect = pygame.Rect(ui_x + padding, box5_y, box_w, box5_h)
-    
+    render_status = FONT_MED.render(status_text, True, status_color)
+    surface.blit(render_status, (ui_x + padding + (box_w - render_status.get_width()) // 2,
+                                  box5_y + (box5_h - render_status.get_height()) // 2))
+
+    # --- Ô 6: UNDO ---
+    box6_y = box5_y + box5_h + padding
+    box6_h = 45
+    btn_undo_rect = pygame.Rect(ui_x + padding, box6_y, box_w, box6_h)
     can_undo = not ai_thinking and len(move_history) >= 2
     undo_bg = box_bg_color if can_undo else (220, 210, 190)
     undo_txt_color = ink_color if can_undo else (150, 140, 130)
-
     pygame.draw.rect(surface, undo_bg, btn_undo_rect)
     pygame.draw.rect(surface, ink_color, btn_undo_rect, normal_border)
-    
     undo_txt = FONT_MED.render("Undo", True, undo_txt_color)
-    surface.blit(undo_txt, (btn_undo_rect.x + (box_w - undo_txt.get_width())//2, btn_undo_rect.y + (box5_h - undo_txt.get_height())//2))
+    surface.blit(undo_txt, (btn_undo_rect.x + (box_w - undo_txt.get_width()) // 2,
+                             btn_undo_rect.y + (box6_h - undo_txt.get_height()) // 2))
 
-    # Vẽ bảng caro 9x9 bên phải
+    # Vẽ bảng caro
     for i in range(N + 1):
         pygame.draw.line(surface, ink_color, 
                          (BOARD_X + i * CELL_SIZE, BOARD_Y), 
@@ -338,15 +416,14 @@ def draw_background_and_ui(surface):
         pygame.draw.line(surface, ink_color, 
                          (BOARD_X, BOARD_Y + i * CELL_SIZE), 
                          (BOARD_X + BOARD_SIZE, BOARD_Y + i * CELL_SIZE), 2)
-        
-# 3. CẬP NHẬT TỌA ĐỘ VẼ X/O
+
+
 def render_board(board, ximg, oimg):
     global graphical_board
     for i in range(N):
         for j in range(N):
             center_x = BOARD_X + j * CELL_SIZE + CELL_SIZE // 2
             center_y = BOARD_Y + i * CELL_SIZE + CELL_SIZE // 2
-            
             if board[i][j] == -1:
                 graphical_board[i][j][0] = ximg
                 graphical_board[i][j][1] = ximg.get_rect(center=(center_x, center_y))
@@ -354,53 +431,51 @@ def render_board(board, ximg, oimg):
                 graphical_board[i][j][0] = oimg
                 graphical_board[i][j][1] = oimg.get_rect(center=(center_x, center_y))
 
-# 4. CẬP NHẬT TỌA ĐỘ CLICK CHUỘT LÊN BÀN CỜ
-def add_XO(board, graphical_board, to_move):
-    current_pos = pygame.mouse.get_pos()
-    
-    if BOARD_X <= current_pos[0] <= BOARD_X + BOARD_SIZE and BOARD_Y <= current_pos[1] <= BOARD_Y + BOARD_SIZE:
-        converted_x = int((current_pos[0] - BOARD_X) / CELL_SIZE)
-        converted_y = int((current_pos[1] - BOARD_Y) / CELL_SIZE)
-        
-        if 0 <= converted_x < N and 0 <= converted_y < N:
-            if board[converted_y][converted_x] == 0:
-                board[converted_y][converted_x] = to_move 
-                last_move = to_move
-                render_board(board, X_IMG, O_IMG)
-                return board, (1 if to_move == -1 else -1), converted_y, converted_x, last_move
-                
-    return board, to_move, None, None, None
 
-def ai_task():
-    global ai_thinking, to_move, game_finished, winner_text, current_difficulty, move_history
-    
-    if current_difficulty == "Easy": ai.depth = 2
+def reset_game():
+    """Reset toàn bộ trạng thái game."""
+    global board, graphical_board, ai, to_move, game_finished, winner_text, ai_thinking
+    global move_history, move_x_handler, move_o_handler
+    board = [[0 for _ in range(N)] for _ in range(N)]
+    graphical_board = [[ [None, None] for _ in range(N)] for _ in range(N)]
+    ai = AiTicTacToe()
+    to_move = -1
+    game_finished = False
+    winner_text = ""
+    ai_thinking = False
+    move_history = []
+    move_x_handler, move_o_handler = create_move_handlers(game_mode)
+
+
+def get_current_handler():
+    """Trả về handler của bên đang có lượt đi."""
+    return move_x_handler if to_move == -1 else move_o_handler
+
+
+def ai_task(handler: AiMove):
+    global ai_thinking, to_move, game_finished, winner_text, current_difficulty, move_history, board
+
+    if current_difficulty == "Easy":   ai.depth = 2
     elif current_difficulty == "Medium": ai.depth = 3
-    elif current_difficulty == "Hard": ai.depth = 4
+    elif current_difficulty == "Hard":   ai.depth = 4
 
-    move_y, move_x = ai.best_move() 
-    
+    move_y, move_x = handler.get_move(ai)
+
     if move_y != -1 and not game_finished:
-        board[move_y][move_x] = 1
-        ai.board[move_y][move_x] = 1
-        ai.currentI, ai.currentJ = move_y, move_x
-        ai.lastPlayed = 1
-        ai.emptyCells -= 1
-        ai.update_bound(move_y, move_x, ai.next_bound)
-        
-        move_history.append((move_y, move_x, 1))
+        handler.apply_move(board, ai, move_y, move_x, move_history)
         play_sound(SOUND_MOVE)
         render_board(board, X_IMG, O_IMG)
-        
-        if ai.isFour(move_y, move_x, 1):
-            winner_text = "AI (O) WINS!"
+
+        if ai.isWin(move_y, move_x, handler.player_value):
+            winner_text = f"{'X' if handler.player_value == -1 else 'O'} WINS!"
             game_finished = True
         elif ai.emptyCells <= 0:
             winner_text = "TIE GAME!"
             game_finished = True
-            
-    to_move = -1
+
+    to_move = 1 if to_move == -1 else -1
     ai_thinking = False
+
 
 # =========================================================================
 # GỌI HÀM INTRO VÀ LOADING TRƯỚC KHI VÀO GAME
@@ -424,13 +499,17 @@ while True:
     
     if game_finished:
         display_winner(winner_text)
-    
-    if not game_finished and to_move == 1:
-        if not ai_thinking:
+
+    # --- XỬ LÝ LƯỢT ĐI TỰ ĐỘNG (AI) ---
+    if not game_finished and not ai_thinking:
+        current_handler = get_current_handler()
+        if isinstance(current_handler, AiMove):
             ai_thinking = True
-            ai_thread = threading.Thread(target=ai_task)
+            ai_thread = threading.Thread(target=ai_task, args=(current_handler,))
+            ai_thread.daemon = True
             ai_thread.start()
 
+    # --- XỬ LÝ SỰ KIỆN ---
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             pygame.quit()
@@ -438,24 +517,23 @@ while True:
             
         if event.type == pygame.MOUSEBUTTONDOWN:
             mouse_pos = event.pos
-            
-            # --- XỬ LÝ CLICK NÚT UNDO ---
+
+            # --- UNDO ---
             if btn_undo_rect and btn_undo_rect.collidepoint(mouse_pos):
                 if not ai_thinking and len(move_history) >= 2:
                     play_sound(SOUND_UNDO)
-                    
-                    while len(move_history) > 0 and move_history[-1][2] == 1:
+                    # Xóa nước đi gần nhất của 2 bên
+                    while len(move_history) > 0 and move_history[-1][2] == (1 if to_move == -1 else -1):
                         move_history.pop()
-                    if len(move_history) > 0 and move_history[-1][2] == -1:
+                    if len(move_history) > 0:
                         move_history.pop()
-                    
-                    board = [[0 for _ in range(N)] for _ in range(N)] 
+                    # Tái tạo board từ history
+                    board = [[0 for _ in range(N)] for _ in range(N)]
                     graphical_board = [[ [None, None] for _ in range(N)] for _ in range(N)]
-                    ai = AiTicTacToe() 
+                    ai = AiTicTacToe()
                     to_move = -1
                     game_finished = False
                     winner_text = ""
-                    
                     for hy, hx, hp in move_history:
                         board[hy][hx] = hp
                         ai.board[hy][hx] = hp
@@ -463,54 +541,61 @@ while True:
                         ai.lastPlayed = hp
                         ai.emptyCells -= 1
                         ai.update_bound(hy, hx, ai.next_bound)
-                        
+                    # Xác định đến lượt ai tiếp theo
+                    if move_history:
+                        last_player = move_history[-1][2]
+                        to_move = 1 if last_player == -1 else -1
                     render_board(board, X_IMG, O_IMG)
-                continue 
+                continue
 
-            # --- XỬ LÝ CLICK CHỌN ĐỘ KHÓ ---
-            if not game_finished and to_move == -1 and not ai_thinking:
+            # --- CHỌN GAME MODE ---
+            if not game_finished and not ai_thinking:
+                mode_changed = False
+                if btn_hvA_rect and btn_hvA_rect.collidepoint(mouse_pos) and game_mode != "HvA":
+                    game_mode = "HvA"; mode_changed = True
+                elif btn_hvH_rect and btn_hvH_rect.collidepoint(mouse_pos) and game_mode != "HvH":
+                    game_mode = "HvH"; mode_changed = True
+                if mode_changed:
+                    play_sound(SOUND_CLICK)
+                    reset_game()
+                    continue
+
+                # --- CHỌN ĐỘ KHÓ ---
                 if btn_easy_rect and btn_easy_rect.collidepoint(mouse_pos):
                     if current_difficulty != "Easy": play_sound(SOUND_CLICK)
-                    current_difficulty = "Easy"
-                    continue 
+                    current_difficulty = "Easy"; continue
                 elif btn_med_rect and btn_med_rect.collidepoint(mouse_pos):
                     if current_difficulty != "Medium": play_sound(SOUND_CLICK)
-                    current_difficulty = "Medium"
-                    continue
+                    current_difficulty = "Medium"; continue
                 elif btn_hard_rect and btn_hard_rect.collidepoint(mouse_pos):
                     if current_difficulty != "Hard": play_sound(SOUND_CLICK)
-                    current_difficulty = "Hard"
-                    continue
+                    current_difficulty = "Hard"; continue
 
-            # --- XỬ LÝ CLICK LÊN BÀN CỜ ---
-            if game_finished and BOARD_X <= mouse_pos[0] <= BOARD_X + BOARD_SIZE and BOARD_Y <= mouse_pos[1] <= BOARD_Y + BOARD_SIZE:
-                board = [[0 for _ in range(N)] for _ in range(N)] 
-                graphical_board = [[ [None, None] for _ in range(N)] for _ in range(N)]
-                ai = AiTicTacToe() 
-                to_move = -1
-                game_finished = False
-                winner_text = ""
-                ai_thinking = False
-                move_history = [] 
-            elif to_move == -1 and not ai_thinking: 
-                board, to_move, y, x, last_move = add_XO(board, graphical_board, to_move)
-                if y is not None and x is not None:
-                    play_sound(SOUND_MOVE)
-                    
-                    ai.board[y][x] = -1
-                    ai.currentI, ai.currentJ = y, x
-                    ai.lastPlayed = -1
-                    ai.emptyCells -= 1
-                    ai.update_bound(y, x, ai.next_bound)
-                    
-                    move_history.append((y, x, -1))
-                    
-                    if ai.isFour(y, x, last_move):
-                        winner_text = "PLAYER (X) WINS!"
-                        game_finished = True
-                    elif ai.emptyCells <= 0:
-                        winner_text = "TIE GAME!"
-                        game_finished = True
+            # --- CLICK LÊN BÀN CỜ: reset nếu game đã kết thúc ---
+            if game_finished:
+                if (BOARD_X <= mouse_pos[0] <= BOARD_X + BOARD_SIZE and
+                        BOARD_Y <= mouse_pos[1] <= BOARD_Y + BOARD_SIZE):
+                    reset_game()
+                continue
+
+            # --- HUMAN MOVE: xử lý khi handler hiện tại là HumanMove ---
+            if not ai_thinking:
+                current_handler = get_current_handler()
+                if isinstance(current_handler, HumanMove):
+                    row, col = current_handler.get_move(board, mouse_pos)
+                    if row is not None:
+                        current_handler.apply_move(board, ai, row, col, move_history)
+                        play_sound(SOUND_MOVE)
+                        render_board(board, X_IMG, O_IMG)
+
+                        if ai.isWin(row, col, current_handler.player_value):
+                            winner_text = f"{'X' if current_handler.player_value == -1 else 'O'} WINS!"
+                            game_finished = True
+                        elif ai.emptyCells <= 0:
+                            winner_text = "TIE GAME!"
+                            game_finished = True
+                        else:
+                            to_move = 1 if to_move == -1 else -1
 
     pygame.display.update()
     clock.tick(60)
