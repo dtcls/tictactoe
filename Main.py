@@ -16,9 +16,9 @@ SCREEN = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Caro Board - Mang tinh yeu den cho moi nha")
 
 N = 9
-CELL_SIZE = 55
+CELL_SIZE = 60
 BOARD_SIZE = CELL_SIZE * N
-BOARD_X = 600
+BOARD_X = 550
 BOARD_Y = 100
 
 # --- TẢI ẢNH NỀN ---
@@ -278,10 +278,10 @@ def draw_background_and_ui(surface):
     highlight_border = 4                 
     normal_border = 2                    
 
-    ui_x = 180
+    ui_x = 150
     ui_y = BOARD_Y      
     ui_width = 350
-    ui_height = BOARD_SIZE
+    ui_height = 540
     
     pygame.draw.rect(surface, parchment_color, (ui_x, ui_y, ui_width, ui_height))
     pygame.draw.rect(surface, ink_color, (ui_x, ui_y, ui_width, ui_height), 3)
@@ -300,7 +300,7 @@ def draw_background_and_ui(surface):
     mode_btn_h = 32
     mode_btn_start_x = ui_x + padding + 10
     mode_btn_y = box1_y + 36
-    modes = [("HvA", "H vs AI"), ("HvH", "H vs H")]
+    modes = [("HvA", "PVE"), ("HvH", "PVP")]
     mode_rects = []
 
     for i, (mode_key, mode_label) in enumerate(modes):
@@ -416,6 +416,8 @@ def draw_background_and_ui(surface):
         pygame.draw.line(surface, ink_color, 
                          (BOARD_X, BOARD_Y + i * CELL_SIZE), 
                          (BOARD_X + BOARD_SIZE, BOARD_Y + i * CELL_SIZE), 2)
+        
+    pygame.draw.rect(surface, ink_color, (BOARD_X, BOARD_Y, BOARD_SIZE, BOARD_SIZE), 5)
 
 
 def render_board(board, ximg, oimg):
@@ -454,6 +456,11 @@ def get_current_handler():
 
 def ai_task(handler: AiMove):
     global ai_thinking, to_move, game_finished, winner_text, current_difficulty, move_history, board
+
+    if SOUND_MOVE:
+        # get_length() trả về thời gian file âm thanh (giây). Nhân 1000 để đổi ra mili giây.
+        delay_ms = int(SOUND_MOVE.get_length() * 1000)
+        pygame.time.wait(delay_ms)
 
     if current_difficulty == "Easy":   ai.depth = 2
     elif current_difficulty == "Medium": ai.depth = 3
