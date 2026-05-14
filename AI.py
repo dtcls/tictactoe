@@ -425,3 +425,127 @@ class AiTicTacToe:
                 move = best_move
 
         return move
+
+def min_Max(self, depth, bound, isMaximizing):
+    # 1. Kiểm tra thắng/thua
+    if self.lastPlayed != 0 and self.isWin(self.currentI, self.currentJ, self.lastPlayed):
+        if self.lastPlayed == 1:  # AI thắng
+            return SCORES["FOUR"] + depth * 200
+        else:  # Human thắng
+            return -SCORES["FOUR"] - depth * 200
+
+    # 2. Kiểm tra hòa hoặc hết độ sâu
+    if self.emptyCells <= 0:
+        return 0
+
+    if depth <= 0 or not bound:
+        return self.evaluate()
+
+    if isMaximizing:
+        best_score = -math.inf
+        state = 1  # AI
+
+        for i, j in self.orderedMoves(bound, depth):
+            saved = (self.currentI, self.currentJ, self.lastPlayed)
+
+            # Đánh thử quân AI
+            self.board[i][j] = state
+            self.emptyCells -= 1
+            self.currentI, self.currentJ, self.lastPlayed = i, j, state
+
+            # Cập nhật vùng nước đi tiếp theo
+            new_bound = bound - {(i, j)}
+            self.update_bound(i, j, new_bound, radius=1)
+
+            score = self.min_Max(depth - 1, new_bound, False)
+
+            # Hoàn tác
+            self.board[i][j] = 0
+            self.emptyCells += 1
+            self.currentI, self.currentJ, self.lastPlayed = saved
+
+            best_score = max(best_score, score)
+
+        return best_score
+
+    else:
+        best_score = math.inf
+        state = -1  # Human
+
+        for i, j in self.orderedMoves(bound, depth):
+            saved = (self.currentI, self.currentJ, self.lastPlayed)
+
+            # Đánh thử quân Human
+            self.board[i][j] = state
+            self.emptyCells -= 1
+            self.currentI, self.currentJ, self.lastPlayed = i, j, state
+
+            # Cập nhật vùng nước đi tiếp theo
+            new_bound = bound - {(i, j)}
+            self.update_bound(i, j, new_bound, radius=1)
+
+            score = self.min_Max(depth - 1, new_bound, True)
+
+            # Hoàn tác
+            self.board[i][j] = 0
+            self.emptyCells += 1
+            self.currentI, self.currentJ, self.lastPlayed = saved
+
+            best_score = min(best_score, score)
+
+        return best_score
+
+
+def best_move(self):
+    # Đồng bộ lại trạng thái trước khi AI tìm nước đi
+    self.sync_state()
+
+    # Nếu bàn cờ rỗng, đánh vào giữa
+    if self.emptyCells == N * N:
+        return N // 2, N // 2
+
+    bound = set(self.next_bound)
+
+    # Nếu vì lý do nào đó bound rỗng, tạo lại bound từ các quân đã có
+    if not bound:
+        for i in range(N):
+            for j in range(N):
+                if self.board[i][j] != 0:
+                    self.update_bound(i, j, bound, radius=1)
+
+    if not bound:
+        return N // 2, N // 2
+
+    best_score = -math.inf
+    best_move = (-1, -1)
+    d = self.depth
+
+    moves = self.orderedMoves(bound, d)
+
+    for i, j in moves:
+        saved = (self.currentI, self.currentJ, self.lastPlayed)
+
+        # AI đánh thử
+        self.board[i][j] = 1
+        self.emptyCells -= 1
+        self.currentI, self.currentJ, self.lastPlayed = i, j, 1
+
+        new_bound = bound - {(i, j)}
+        self.update_bound(i, j, new_bound, radius=1)
+
+        score = self.min_Max(d - 1, new_bound, False)
+
+        # Hoàn tác
+        self.board[i][j] = 0
+        self.emptyCells += 1
+        self.currentI, self.currentJ, self.lastPlayed = saved
+
+        if score > best_score:
+            best_score = score
+            best_move = (i, j)
+
+        # Nếu tìm được nước thắng chắc thì trả về luôn
+        if best_score >= SCORES["FOUR"]:
+            return best_move
+
+    return best_move
