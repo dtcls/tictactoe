@@ -463,8 +463,8 @@ def ai_task(handler: AiMove):
         pygame.time.wait(delay_ms)
 
     if current_difficulty == "Easy":   ai.depth = 3
-    elif current_difficulty == "Medium": ai.depth = 5
-    elif current_difficulty == "Hard":   ai.depth = 7
+    elif current_difficulty == "Medium": ai.depth = 4
+    elif current_difficulty == "Hard":   ai.depth = 5
 
     move_y, move_x = handler.get_move(ai)
 
