@@ -6,7 +6,6 @@ from typing import List, Set, Tuple, Optional
 N = 9
 Move = Tuple[int, int]
 
-# Evaluation scores: positive = AI advantage, negative = Human advantage
 SCORES = {
     "FOUR": 1_000_000,
     "OPEN_THREE": 220_000,
@@ -15,9 +14,6 @@ SCORES = {
     "BLOCK_TWO": 500,
     "OPEN_ONE": 8,
     "BLOCK_ONE": 1,
-
-    # Tactical pattern scores for fork/double-threat play.
-    # These are deliberately below an immediate FOUR, but above a normal single threat.
     "DOUBLE_OPEN_THREE": 850_000,
     "OPEN_THREE_AND_OPEN_TWO": 420_000,
     "DOUBLE_OPEN_TWO": 95_000,
@@ -36,8 +32,6 @@ for _c in range(1, 6):
         elif _c == 1:
             _EVAL_TABLE[(_c, _e)] = SCORES["OPEN_ONE"] if _e >= 2 else SCORES["BLOCK_ONE"]
 
-# Directions: vertical, horizontal, main diagonal, anti-diagonal.
-# Code uses (dirX, dirY), so row changes by dirY and col changes by dirX.
 AXES = ((1, 0), (0, 1), (1, 1), (1, -1))
 
 _NEIGHBORS = {
@@ -97,13 +91,9 @@ class AiTicTacToe:
         self._EVAL_CACHE_MAX = 120_000
         self._zhash = 0
 
-        # Useful for benchmark/reporting
         self.nodes = 0
         self.cutoffs = 0
 
-    # ------------------------------------------------------------------
-    # State management
-    # ------------------------------------------------------------------
     def sync_state(self) -> None:
         """Rebuild hash, empty count and candidate move set from current board."""
         self._zhash = 0
@@ -151,10 +141,6 @@ class AiTicTacToe:
             row, col = ni + di, nj + dj
             if 0 <= row < N and 0 <= col < N and self.board[row][col] == 0:
                 bound.add((row, col))
-
-    # ------------------------------------------------------------------
-    # Win and evaluation
-    # ------------------------------------------------------------------
     def countDirection(self, i: int, j: int, xdir: int, ydir: int, state: int, board=None) -> int:
         if board is None:
             board = self.board
@@ -212,25 +198,13 @@ class AiTicTacToe:
         return count, open_ends
 
     def pattern_counts_after_move(self, i: int, j: int, state: int) -> Tuple[int, int, int, int]:
-        """
-        Count tactical patterns created by temporarily placing `state` at (i, j).
 
-        Returns:
-            open_three: number of directions creating an open three
-            block_three: number of directions creating a blocked three
-            open_two: number of directions creating an open two
-            block_two: number of directions creating a blocked two
-
-        In this 9x9 Caro variant, 4 in a row wins. Therefore two simultaneous
-        open threats are very strong: the opponent can usually block only one.
-        """
         open_three = block_three = open_two = block_two = 0
 
         for dirX, dirY in AXES:
             count, open_ends = self.line_correct(i, j, dirX, dirY, state)
 
             if count >= 4:
-                # Immediate win is handled separately by isWin/threat.
                 continue
             if count == 3:
                 if open_ends >= 2:
@@ -250,22 +224,14 @@ class AiTicTacToe:
         open_three, block_three, open_two, _ = self.pattern_counts_after_move(i, j, state)
 
         score = 0
-
-        # Two open-threes: classic winning fork. Opponent can block only one.
         if open_three >= 2:
             score += SCORES["DOUBLE_OPEN_THREE"]
 
-        # One open-three plus one open-two: creates strong pressure and often
-        # becomes a forced win at deeper search.
         if open_three >= 1 and open_two >= 1:
             score += SCORES["OPEN_THREE_AND_OPEN_TWO"]
-
-        # Two open-twos: not immediately winning, but excellent for creating
-        # future double threats.
         if open_two >= 2:
             score += SCORES["DOUBLE_OPEN_TWO"]
 
-        # Two blocked threes are weaker than open-three forks, but still useful.
         if block_three >= 2:
             score += SCORES["TWO_BLOCK_THREES"]
 
@@ -277,8 +243,6 @@ class AiTicTacToe:
             count, open_ends = self.line_correct(i, j, dirX, dirY, state)
             total += _EVAL_TABLE.get((count, open_ends), 0)
 
-        # Add fork/double-threat bonus so the AI can create and recognize traps,
-        # not only single straight-line threats.
         total += self.double_threat_score(i, j, state)
         return total
 
@@ -300,7 +264,6 @@ class AiTicTacToe:
                     prev_i = i - dirY
                     prev_j = j - dirX
 
-                    # Count a chain only once: at the start of the chain.
                     if 0 <= prev_i < N and 0 <= prev_j < N and board[prev_i][prev_j] == cell:
                         continue
 
@@ -325,20 +288,15 @@ class AiTicTacToe:
         self.eval_cache[self._zhash] = score
         return score
 
-    # ------------------------------------------------------------------
-    # Move ordering and threat detection
-    # ------------------------------------------------------------------
     def scoreMove(self, i: int, j: int, depth: int) -> int:
         score = self.history_table.get((i, j), 0)
 
         if depth < len(self.killer_moves) and (i, j) in self.killer_moves[depth]:
             score += 10_000
 
-        # Prefer center, especially opening/mid-game.
         score += 30 - (abs(i - N // 2) + abs(j - N // 2)) * 3
 
-        # Defense is weighted slightly higher so AI blocks immediate human threats.
-        for state, weight in ((1, 2.0), (-1, 2.8)):
+        for state, weight in ((1, 3.5), (-1, 2.0)):
             self.board[i][j] = state
             try:
                 if self.isWin(i, j, state):
@@ -353,7 +311,6 @@ class AiTicTacToe:
     def orderedMoves(self, bound: Set[Move], depth: int) -> List[Move]:
         moves = sorted(bound, key=lambda pos: self.scoreMove(pos[0], pos[1], depth), reverse=True)
 
-        # Beam search: drastically reduces branching while preserving the most promising moves.
         if depth >= 6:
             return moves[:7]
         if depth == 5:
@@ -367,7 +324,6 @@ class AiTicTacToe:
         return moves[:24]
 
     def _move_tactical_value(self, i: int, j: int, state: int) -> int:
-        """Evaluate only the tactical value of one candidate move."""
         self.board[i][j] = state
         try:
             if self.isWin(i, j, state):
@@ -376,7 +332,6 @@ class AiTicTacToe:
             open_three, block_three, open_two, _ = self.pattern_counts_after_move(i, j, state)
             value = self.double_threat_score(i, j, state)
 
-            # Single threats still matter, but are lower than genuine forks.
             value += open_three * SCORES["OPEN_THREE"]
             value += block_three * SCORES["BLOCK_THREE"]
             value += open_two * SCORES["OPEN_TWO"]
@@ -385,24 +340,15 @@ class AiTicTacToe:
             self.board[i][j] = 0
 
     def threat(self, bound: Set[Move]) -> Optional[Move]:
-        """
-        Return an urgent tactical move. Priority:
-        1. AI wins now.
-        2. Block Human's immediate win.
-        3. Create AI double threat/fork.
-        4. Block Human double threat/fork.
-        """
+
         ordered = self.orderedMoves(bound, self.depth)
 
-        # 1. AI can win now.
         for i, j in ordered:
             self.board[i][j] = 1
             win = self.isWin(i, j, 1)
             self.board[i][j] = 0
             if win:
                 return (i, j)
-
-        # 2. Human can win next: block the strongest one.
         human_wins = []
         for i, j in bound:
             self.board[i][j] = -1
@@ -414,7 +360,6 @@ class AiTicTacToe:
         if human_wins:
             return max(human_wins, key=lambda pos: self.scoreMove(pos[0], pos[1], self.depth))
 
-        # 3. If AI can create a strong fork, take it immediately.
         ai_forks = []
         for i, j in ordered:
             value = self._move_tactical_value(i, j, 1)
@@ -424,7 +369,6 @@ class AiTicTacToe:
             _, i, j = max(ai_forks)
             return (i, j)
 
-        # 4. If Human can create a strong fork next, block the strongest fork.
         human_forks = []
         for i, j in ordered:
             value = self._move_tactical_value(i, j, -1)
@@ -444,9 +388,7 @@ class AiTicTacToe:
             if len(self.killer_moves[depth]) > 2:
                 self.killer_moves[depth].pop()
 
-    # ------------------------------------------------------------------
-    # Plain Minimax: kept for benchmark comparison
-    # ------------------------------------------------------------------
+
     def min_Max(self, depth: int, bound: Set[Move], isMaximizing: bool) -> int:
         self.nodes += 1
 
@@ -484,10 +426,7 @@ class AiTicTacToe:
                     best_score = score
 
         return best_score
-
-    # ------------------------------------------------------------------
     # Alpha-Beta + Transposition Table
-    # ------------------------------------------------------------------
     def alpha_beta_transposition(self, depth: int, bound: Set[Move], alpha: float, beta: float, isMaximizing: bool) -> int:
         self.nodes += 1
 
@@ -566,7 +505,6 @@ class AiTicTacToe:
         return best
 
     def best_move_transposition(self) -> Move:
-        """Fast and strongest move search. Use this in the actual UI/game."""
         self.sync_state()
 
         if self.emptyCells == N * N:
@@ -595,7 +533,6 @@ class AiTicTacToe:
         move: Move = (-1, -1)
         max_depth = max(1, self.depth)
 
-        # Iterative deepening improves move ordering for deeper searches.
         for d in range(1, max_depth + 1):
             best_score = -math.inf
             best_move: Move = (-1, -1)
@@ -621,7 +558,6 @@ class AiTicTacToe:
                     best_score = score
                     best_move = (i, j)
 
-                # Winning line found, no need to search deeper.
                 if best_score >= SCORES["FOUR"]:
                     return best_move
 
@@ -631,7 +567,6 @@ class AiTicTacToe:
         return move
 
     def best_move_minimax(self) -> Move:
-        """Plain Minimax move search. Use mainly for benchmark."""
         self.sync_state()
 
         if self.emptyCells == N * N:
