@@ -680,7 +680,3 @@ class AiTicTacToe:
                 return best_move
 
         return best_move
-
-    def best_move(self) -> Move:
-        """Backward-compatible default: use optimized Alpha-Beta version."""
-        return self.best_move_transposition()
