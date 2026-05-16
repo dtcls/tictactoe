@@ -1,4 +1,3 @@
-# AI_optimized_v4_double_threat - optimized Caro AI for 9x9 board, win condition = 4
 import math
 import random
 from typing import List, Set, Tuple, Optional
