@@ -102,7 +102,7 @@ class AiMove:
         if ai_algorithm == "ALP":
             return ai_obj.best_move_transposition() # ALP
         else:
-            return ai_obj.best_move() #MNM
+            return ai_obj.best_move_minimax() #MNM
     
     def apply_move(self, board, ai_obj, row, col, move_history):
         board[row][col] = self.player_value
@@ -475,8 +475,8 @@ def ai_task(handler: AiMove):
         pygame.time.wait(delay_ms)
 
     if current_difficulty == "Easy":   ai.depth = 3
-    elif current_difficulty == "Medium": ai.depth = 5
-    elif current_difficulty == "Hard":   ai.depth = 7
+    elif current_difficulty == "Medium": ai.depth = 4
+    elif current_difficulty == "Hard":   ai.depth = 5
 
     move_y, move_x = handler.get_move(ai)
 
@@ -628,3 +628,6 @@ while True:
 
     pygame.display.update()
     clock.tick(60)
+
+
+    
