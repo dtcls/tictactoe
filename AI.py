@@ -8,6 +8,7 @@ Move = Tuple[int, int]
 SCORES = {
     "FOUR": 1_000_000,
     "OPEN_THREE": 220_000,
+    "OPEN_THREE_PRIORITY": 650_000,
     "BLOCK_THREE": 55_000,
     "OPEN_TWO": 4_500,
     "BLOCK_TWO": 500,
@@ -301,6 +302,17 @@ class AiTicTacToe:
                 if self.isWin(i, j, state):
                     score += int(SCORES["FOUR"] * weight)
                 else:
+                    open_three, block_three, open_two, _ = self.pattern_counts_after_move(i, j, state)
+
+                    # Tăng mạnh điểm sắp xếp cho nước tạo 3 mở.
+                    # Với AI, bonus cao hơn để AI chủ động tấn công.
+                    # Với người chơi, vẫn cộng điểm để AI biết ưu tiên xét/chặn nguy cơ.
+                    open_three_bonus = open_three * SCORES["OPEN_THREE_PRIORITY"]
+                    if state == 1:
+                        score += int(open_three_bonus * 2.0)
+                    else:
+                        score += int(open_three_bonus * 1.2)
+
                     score += int(self.eval_delta(i, j, state) * weight)
             finally:
                 self.board[i][j] = 0
@@ -338,16 +350,38 @@ class AiTicTacToe:
         finally:
             self.board[i][j] = 0
 
+    def _open_three_info(self, i: int, j: int, state: int) -> Tuple[int, int]:
+        """
+        Return (open_three_count, value) after temporarily placing `state` at (i, j).
+        This is used to make AI explicitly prefer moves that create an open three.
+        """
+        self.board[i][j] = state
+        try:
+            open_three, block_three, open_two, block_two = self.pattern_counts_after_move(i, j, state)
+            value = (
+                open_three * SCORES["OPEN_THREE_PRIORITY"]
+                + block_three * SCORES["BLOCK_THREE"]
+                + open_two * SCORES["OPEN_TWO"]
+                + block_two * SCORES["BLOCK_TWO"]
+                + self.double_threat_score(i, j, state)
+            )
+            return open_three, value
+        finally:
+            self.board[i][j] = 0
+
     def threat(self, bound: Set[Move]) -> Optional[Move]:
 
         ordered = self.orderedMoves(bound, self.depth)
 
+        # 1. Nếu AI thắng ngay thì đánh luôn.
         for i, j in ordered:
             self.board[i][j] = 1
             win = self.isWin(i, j, 1)
             self.board[i][j] = 0
             if win:
                 return (i, j)
+
+        # 2. Nếu người chơi thắng ngay ở lượt sau thì bắt buộc phải chặn.
         human_wins = []
         for i, j in bound:
             self.board[i][j] = -1
@@ -359,6 +393,7 @@ class AiTicTacToe:
         if human_wins:
             return max(human_wins, key=lambda pos: self.scoreMove(pos[0], pos[1], self.depth))
 
+        # 3. Ưu tiên các nước tạo đòn kép mạnh: hai 3 mở, hoặc 3 mở + 2 mở.
         ai_forks = []
         for i, j in ordered:
             value = self._move_tactical_value(i, j, 1)
@@ -368,6 +403,7 @@ class AiTicTacToe:
             _, i, j = max(ai_forks)
             return (i, j)
 
+        # 4. Nếu người chơi có đòn kép mạnh thì chặn trước.
         human_forks = []
         for i, j in ordered:
             value = self._move_tactical_value(i, j, -1)
@@ -375,6 +411,18 @@ class AiTicTacToe:
                 human_forks.append((value, i, j))
         if human_forks:
             _, i, j = max(human_forks)
+            return (i, j)
+
+        # 5. Mới thêm: nếu không có tình huống bắt buộc ở trên,
+        # AI sẽ chủ động chọn nước tạo 3 mở.
+        ai_open_threes = []
+        for i, j in ordered:
+            open_three, value = self._open_three_info(i, j, 1)
+            if open_three >= 1:
+                ai_open_threes.append((open_three, value, self.scoreMove(i, j, self.depth), i, j))
+
+        if ai_open_threes:
+            _, _, _, i, j = max(ai_open_threes)
             return (i, j)
 
         return None
