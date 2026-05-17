@@ -1,4 +1,4 @@
-# Cờ Caro AI — Minimax & Alpha-Beta Pruning
+# Cờ Caro AI - Minimax & Alpha-Beta Pruning
 
 Bài tập lập trình môn **Cơ sở Trí tuệ Nhân tạo**.  
 Chương trình chơi Cờ Caro 9×9, điều kiện thắng: 4 quân liên tiếp.
@@ -67,6 +67,6 @@ caro-ai/
 
 | MSSV | Họ và Tên |
 |---|---|
-| ... | ... |
-| ... | ... |
-| ... | ... |
+| 24022409 | Phạm Quang Minh |
+| 24022439 | Lê Văn Sang |
+| 24022445 | Nguyễn Sỹ Trường Sơn |
