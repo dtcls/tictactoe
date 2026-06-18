@@ -116,7 +116,7 @@ class AiMove:
 
 board = [[0 for _ in range(N)] for _ in range(N)]
 graphical_board = [[ [None, None] for _ in range(N)] for _ in range(N)]
-to_move = -1  # -1 = lượt X, 1 = lượt O
+to_move = -1
 
 def create_move_handlers(mode):
     global first_turn
@@ -222,7 +222,7 @@ def play_loading_animation():
         clock.tick(15)
 
 
-# VẼ UI (có thêm phần chọn Game Mode)
+# VẼ UI
 def get_player_labels(mode):
     global first_turn
     if mode == "HvH": 
@@ -350,7 +350,7 @@ def draw_background_and_ui(surface):
     pygame.draw.rect(surface, ink_color, (ui_x + padding, box3_y, box_w, box3_h), border3)
     surface.blit(FONT_SMALL.render(label_o, True, (120, 100, 80)), (ui_x + padding + 15, box3_y + 10))
 
-    # Nếu BẠN đi trước (BOT cầm O), vẽ nút chọn thuật toán AI ở Ô số 3
+    # Nếu NGƯỜI đi trước (BOT cầm O), vẽ nút chọn thuật toán AI ở Ô số 3
     if game_mode == "HvA" and first_turn == "Player":
         toggle_w, toggle_h = 64, 24
         toggle_x = ui_x + padding + 140  
@@ -506,7 +506,6 @@ def ai_task(handler: AiMove):
 play_intro_video()
 play_loading_animation()
 
-# --- MAIN LOOP ---
 ai = AiTicTacToe()
 winner_text = ""
 clock = pygame.time.Clock()
@@ -607,7 +606,6 @@ while True:
                     if current_difficulty != "Hard": play_sound(SOUND_CLICK)
                     current_difficulty = "Hard"; continue
 
-            # CLICK LÊN BÀN CỜ 
             if game_finished:
                 if (BOARD_X <= mouse_pos[0] <= BOARD_X + BOARD_SIZE and
                         BOARD_Y <= mouse_pos[1] <= BOARD_Y + BOARD_SIZE):
