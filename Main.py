@@ -139,6 +139,8 @@ def display_winner(text):
     SCREEN.blit(overlay, (0, HEIGHT // 2 - 75))
     SCREEN.blit(render_text, text_rect)
 
+
+# HÀM PHÁT VIDEO INTRO
 def play_intro_video():
     video_path = "assets/trailer.mp4"
     cap = cv2.VideoCapture(video_path)
@@ -176,6 +178,8 @@ def play_intro_video():
         clock.tick(30)
     cap.release()
 
+
+# HÀM PHÁT LOADING GIF
 def play_loading_animation():
     gif_path = "assets/loading.gif"
     frames = []
@@ -217,6 +221,8 @@ def play_loading_animation():
         frame_idx = (frame_idx + 1) % len(frames)
         clock.tick(15)
 
+
+# VẼ UI (có thêm phần chọn Game Mode)
 def get_player_labels(mode):
     global first_turn
     if mode == "HvH": 
@@ -496,6 +502,7 @@ def ai_task(handler: AiMove):
     ai_thinking = False
 
 
+# GỌI HÀM INTRO VÀ LOADING TRƯỚC KHI VÀO GAME
 play_intro_video()
 play_loading_animation()
 
